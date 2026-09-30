@@ -39,3 +39,5 @@ Entregue o executável gerado em `app/bin/Release/net10.0-windows/win-x64/publis
 ## Estado atual
 
 Este é um protótipo para validação em uma **cópia** da pasta do jogo. Ainda não há versão publicada no repositório.
+
+Uma simulação local do ciclo completo pode ser executada com `dotnet run --project smoke`. Ela usa arquivos fictícios e verifica instalação, atualização, remoção, backup e rejeição de download corrompido.

@@ -23,13 +23,22 @@ public sealed class GitHubAsset
 
 public sealed class Updater
 {
-    private const string Api = "https://api.github.com/repos/pedroo2006/lethal-company-modpack/releases";
-    private readonly HttpClient http = new();
+    private const string PublicApi = "https://api.github.com/repos/pedroo2006/lethal-company-modpack/releases";
+    private readonly HttpClient http;
     private readonly Action<string> report;
+    private readonly string api;
+    private readonly Action<LocalState> saveState;
+    private readonly string backupRoot;
 
-    public Updater(Action<string> report)
+    public Updater(Action<string> report) : this(report, new HttpClient(), PublicApi, Data.SaveState, Data.BackupRoot) { }
+
+    public Updater(Action<string> report, HttpClient http, string api, Action<LocalState> saveState, string backupRoot)
     {
         this.report = report;
+        this.http = http;
+        this.api = api.TrimEnd('/');
+        this.saveState = saveState;
+        this.backupRoot = backupRoot;
         http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("LethalModpackUpdater", "1.0"));
         http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         http.Timeout = Timeout.InfiniteTimeSpan;
@@ -70,14 +79,14 @@ public sealed class Updater
             await ApplyAsync(root, state, release, manifest, isFull);
             state.Tag = manifest.Tag;
             state.Files = manifest.Files;
-            Data.SaveState(state);
+            saveState(state);
         }
         return $"Atualizado para {state.Tag}.";
     }
 
     private async Task<GitHubRelease> GetReleaseAsync(string suffix)
     {
-        using var response = await http.GetAsync(Api + "/" + suffix);
+        using var response = await http.GetAsync(api + "/" + suffix);
         if ((int)response.StatusCode == 404) throw new InvalidOperationException("Ainda não há uma versão publicada no GitHub Releases.");
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<GitHubRelease>(Data.JsonOptions)
@@ -97,7 +106,7 @@ public sealed class Updater
     {
         var workspace = Path.Combine(Path.GetTempPath(), "LethalModpackUpdater", Guid.NewGuid().ToString("N"));
         var stage = Path.Combine(workspace, "stage");
-        var backup = Path.Combine(Data.BackupRoot, manifest.Tag + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
+        var backup = Path.Combine(backupRoot, manifest.Tag + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
         var zipPath = Path.Combine(workspace, "package.zip");
         Directory.CreateDirectory(stage);
         Directory.CreateDirectory(backup);
