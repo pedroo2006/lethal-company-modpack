@@ -87,17 +87,21 @@ public sealed class MainForm : Form
             var updater = new Updater(message => BeginInvoke(() => statusLabel.Text = message));
             var result = await Task.Run(() => updater.UpdateAsync(state));
             statusLabel.Text = result;
-            Process.Start(new ProcessStartInfo(Path.Combine(state.GamePath, "Lethal Company.exe"))
-            {
-                WorkingDirectory = state.GamePath,
-                UseShellExecute = true
-            });
+            StartGame();
             Close();
         }
         catch (Exception ex)
         {
             statusLabel.Text = "Não foi possível atualizar.";
-            MessageBox.Show(this, ex.Message, "Falha na atualização", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (state.Tag is not null && MessageBox.Show(this,
+                ex.Message + "\n\nDeseja jogar com a versão já instalada?",
+                "Falha na atualização", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+            {
+                StartGame();
+                Close();
+            }
+            else if (state.Tag is null)
+                MessageBox.Show(this, ex.Message, "Falha na atualização", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
@@ -105,4 +109,10 @@ public sealed class MainForm : Form
             chooseButton.Enabled = true;
         }
     }
+
+    private void StartGame() => Process.Start(new ProcessStartInfo(Path.Combine(state.GamePath, "Lethal Company.exe"))
+    {
+        WorkingDirectory = state.GamePath,
+        UseShellExecute = true
+    });
 }
