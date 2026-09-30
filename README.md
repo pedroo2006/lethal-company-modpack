@@ -6,6 +6,7 @@ Atualizador de um clique para o modpack de `pedroo2006`. Ele consulta apenas a �
 
 - Na primeira execução, o jogador escolhe a pasta que contém `Lethal Company.exe`.
 - O botão **Atualizar e jogar** baixa a versão aprovada e inicia o jogo.
+- Se os arquivos já corresponderem exatamente à versão publicada, a primeira execução apenas registra essa versão, sem baixar o pacote completo.
 - A primeira instalação baixa `full.zip`. As próximas baixam `delta.zip` de cada versão ainda não instalada.
 - Os arquivos gerenciados ficam somente em `BepInEx/plugins`, `BepInEx/patchers`, `BepInEx/core` e `BepInEx/config`.
 - Na primeira instalação, arquivos extras nessas quatro pastas são removidos para igualar o modpack publicado. Em atualizações posteriores, somente arquivos removidos da versão publicada são excluídos.

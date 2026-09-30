@@ -64,6 +64,15 @@ public sealed class Updater
         report("Procurando a última versão aprovada...");
         var latest = await GetLatestAsync();
         if (latest.Tag == state.Tag) return $"A versão {latest.Tag} já está instalada.";
+        var latestManifest = await GetManifestAsync(latest);
+        if (latestManifest.Tag != latest.Tag) throw new InvalidDataException("A versão do manifesto não corresponde à publicação.");
+        if (state.Tag is null && MatchesExisting(root, latestManifest))
+        {
+            state.Tag = latest.Tag;
+            state.Files = latestManifest.Files;
+            saveState(state);
+            return $"A instalação existente já corresponde à versão {latest.Tag}.";
+        }
 
         var steps = new List<(GitHubRelease Release, ReleaseManifest Manifest)>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -72,7 +81,7 @@ public sealed class Updater
         while (true)
         {
             if (!visited.Add(current.Tag) || steps.Count > 100) throw new InvalidDataException("Histórico de versões inválido.");
-            var manifest = await GetManifestAsync(current);
+            var manifest = current.Tag == latest.Tag ? latestManifest : await GetManifestAsync(current);
             if (manifest.Tag != current.Tag) throw new InvalidDataException("A versão do manifesto não corresponde à publicação.");
             steps.Add((current, manifest));
             if (state.Tag is null || manifest.PreviousTag == state.Tag) break;
@@ -236,6 +245,19 @@ public sealed class Updater
             }
         }
         return list;
+    }
+
+    private static bool MatchesExisting(string root, ReleaseManifest manifest)
+    {
+        var current = EnumerateManagedFiles(root);
+        if (current.Count != manifest.Files.Count || current.Any(p => !manifest.Files.ContainsKey(p))) return false;
+        foreach (var (relative, hash) in manifest.Files)
+        {
+            var path = Data.LocalPath(root, relative);
+            EnsureNoLinks(root, path);
+            if (!File.Exists(path) || Data.HashFile(path) != hash) return false;
+        }
+        return true;
     }
 
     private static void EnsureNoLinks(string root, string destination)
