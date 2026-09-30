@@ -1,4 +1,5 @@
 using System.Net;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using LethalModpackUpdater;
@@ -94,6 +95,64 @@ Check(File.Exists(Path.Combine(game, "BepInEx", "config", "C.cfg")), "C.cfg não
 Check(Directory.EnumerateFiles(Path.Combine(testRoot, "backups"), "Old.dll", SearchOption.AllDirectories).Any(), "Backup inicial ausente.");
 Console.WriteLine("Smoke test passou: instalação, adoção sem download, canal de teste, atualização, remoção, backup e download corrompido.");
 
+var sourceGame = Path.Combine(testRoot, "source-game");
+Directory.CreateDirectory(Path.Combine(sourceGame, "BepInEx", "plugins"));
+File.WriteAllText(Path.Combine(sourceGame, "Lethal Company.exe"), "");
+File.WriteAllText(Path.Combine(sourceGame, "BepInEx", "plugins", "A.dll"), "old");
+File.WriteAllText(Path.Combine(sourceGame, "BepInEx", "plugins", "Removed.dll"), "remove me");
+var sourceZip = Path.Combine(testRoot, "upstream.zip");
+using (var zip = ZipFile.Open(sourceZip, ZipArchiveMode.Create))
+{
+    using var writer = new StreamWriter(zip.CreateEntry("plugins/A.dll").Open());
+    writer.Write("new");
+}
+var sourceManifest = new ReleaseManifest
+{
+    Tag = "v3",
+    Files = new() { ["BepInEx/plugins/A.dll"] = HashText("new") },
+    Archives = new() { ["upstream-1"] = new SourceArchive
+    {
+        Url = "https://thunderstore.io/package/download/test/upstream/1/",
+        Sha256 = Data.HashFile(sourceZip)
+    } },
+    Sources = new() { ["BepInEx/plugins/A.dll"] = new SourceFile { Package = "upstream-1", Entry = "plugins/A.dll" } }
+};
+var sourceDownloadCount = 0;
+var corruptSource = true;
+using var sourceClient = new HttpClient(new FakeHandler(request =>
+{
+    var path = request.RequestUri!.AbsolutePath;
+    if (path == "/releases/latest") return Json(new { tag_name = "v3", assets = Assets("v3") });
+    if (path == "/assets/v3/manifest.json") return Json(sourceManifest);
+    if (request.RequestUri.Host == "thunderstore.io")
+    {
+        sourceDownloadCount++;
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(corruptSource ? [1, 2, 3] : File.ReadAllBytes(sourceZip))
+        };
+    }
+    throw new InvalidOperationException(path);
+}));
+var sourceState = new LocalState
+{
+    GamePath = sourceGame,
+    Tag = "v2",
+    Files = new() { ["BepInEx/plugins/A.dll"] = HashText("old"), ["BepInEx/plugins/Removed.dll"] = HashText("remove me") }
+};
+var sourceUpdater = new Updater(Console.WriteLine, sourceClient, "https://test.local/releases", _ => { }, Path.Combine(testRoot, "source-backups"));
+try { await sourceUpdater.UpdateAsync(sourceState); throw new Exception("Fonte corrompida foi aceita."); }
+catch (InvalidDataException) { }
+Check(sourceState.Tag == "v2" && File.Exists(Path.Combine(sourceGame, "BepInEx", "plugins", "Removed.dll")),
+    "Download corrompido alterou a instalação.");
+corruptSource = false;
+await sourceUpdater.UpdateAsync(sourceState);
+Check(sourceState.Tag == "v3" && File.ReadAllText(Path.Combine(sourceGame, "BepInEx", "plugins", "A.dll")) == "new" &&
+    !File.Exists(Path.Combine(sourceGame, "BepInEx", "plugins", "Removed.dll")), "Fonte original não atualizou e removeu corretamente.");
+await sourceUpdater.UpdateAsync(sourceState);
+Check(sourceDownloadCount == 2, "Repetiu download após atualização.");
+Console.WriteLine("Fonte original: verificação, alteração, remoção e economia de download passaram.");
+
 static object[] Assets(string tag) => new[] { "manifest.json", "full.zip", "delta.zip" }
     .Select(name => (object)new { name, browser_download_url = $"https://test.local/assets/{tag}/{name}" }).ToArray();
 
@@ -106,6 +165,8 @@ static void Check(bool condition, string message)
 {
     if (!condition) throw new Exception(message);
 }
+
+static string HashText(string value) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
 sealed class FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> handle) : HttpMessageHandler
 {

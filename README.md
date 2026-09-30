@@ -1,5 +1,7 @@
 # Lethal Company Modpack Updater
 
+> **Em preparação:** ainda não existe versão publicada para os amigos. O manifesto local cobre 1.418 dos 1.461 arquivos atuais: 1.347 vêm de pacotes originais verificados e 71 são configurações do grupo. Os 43 restantes precisam de origem ou de um tratamento próprio antes da primeira publicação.
+
 Atualizador de um clique para o modpack de `pedroo2006`. Ele consulta apenas a última versão **publicada** em GitHub Releases. Versões em rascunho e testes locais não chegam aos amigos.
 
 ## Funcionamento
@@ -7,7 +9,8 @@ Atualizador de um clique para o modpack de `pedroo2006`. Ele consulta apenas a �
 - Na primeira execução, o jogador escolhe a pasta que contém `Lethal Company.exe`.
 - O botão **Atualizar e jogar** baixa a versão aprovada e inicia o jogo.
 - Se os arquivos já corresponderem exatamente à versão publicada, a primeira execução apenas registra essa versão, sem baixar o pacote completo.
-- A primeira instalação baixa `full.zip`. As próximas baixam `delta.zip` de cada versão ainda não instalada.
+- No formato novo, o manifesto informa a fonte original e o hash de cada arquivo. O aplicativo compara os hashes locais e baixa apenas os pacotes de mods que contêm arquivos ausentes ou alterados. Um pacote original pode conter vários arquivos; o download é por pacote, não por bloco binário.
+- Arquivos sem fonte identificada são preservados se já estiverem corretos. Se precisarem ser instalados ou reparados, o aplicativo informa a pendência antes de mudar a instalação.
 - Os arquivos gerenciados ficam somente em `BepInEx/plugins`, `BepInEx/patchers`, `BepInEx/core` e `BepInEx/config`.
 - Na primeira instalação, arquivos extras nessas quatro pastas são removidos para igualar o modpack publicado. Em atualizações posteriores, somente arquivos removidos da versão publicada são excluídos.
 - O jogo deve estar fechado durante a atualização. Arquivos são verificados por SHA-256 antes de instalar.
@@ -21,7 +24,13 @@ Para o jogador que ajuda nos testes, coloque um arquivo vazio chamado `canal-tes
 
 Se uma versão de teste for abandonada e a próxima versão aprovada seguir outro histórico, o atualizador do testador instala o pacote completo para voltar ao mesmo estado.
 
-## Criar um pacote
+## Auditoria de fontes originais
+
+`tools/CatalogMatch` identifica candidatos no catálogo público do Thunderstore; `tools/SourceAudit` baixa os ZIPs originais em um cache local, verifica os hashes dos arquivos e registra correspondências; `tools/SourceManifest` combina as auditorias em um manifesto preliminar e pode empacotar as configurações `.cfg` escolhidas pelo grupo. O cache, os relatórios, `settings.zip` e o manifesto preliminar ficam em `release-output/`, que é ignorado pelo Git.
+
+O manifesto preliminar só deve ser publicado depois que todos os arquivos necessários tiverem origem verificável ou uma regra explícita para preservar a versão local. DLLs corrigidas manualmente precisam manter essas correções; substituir pela DLL original pode reintroduzir erros já testados.
+
+## Empacotador antigo para testes locais
 
 O computador do publicador precisa do SDK .NET 10. Na raiz do repositório:
 
@@ -35,7 +44,7 @@ Para a próxima versão, passe também o manifesto anterior:
 dotnet run --project publisher -- "C:\caminho\Lethal Company" v1.0.1 release-output\v1.0.1 release-output\v1.0.0\manifest.json
 ```
 
-Cada pacote contém `manifest.json`, `full.zip` e `delta.zip`. Crie uma GitHub Release com a mesma tag do manifesto e anexe **os três arquivos**. Publique somente depois dos testes. Não inclua os arquivos do jogo base.
+Esse comando ainda gera `manifest.json`, `full.zip` e `delta.zip` para o teste local do protótipo. **Não publique esses ZIPs:** eles contêm arquivos de mods de terceiros. A distribuição planejada usa as fontes originais no manifesto.
 
 ## Compilar para os amigos
 

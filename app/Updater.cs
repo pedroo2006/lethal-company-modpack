@@ -63,9 +63,24 @@ public sealed class Updater
 
         report("Procurando a última versão aprovada...");
         var latest = await GetLatestAsync();
-        if (latest.Tag == state.Tag) return $"A versão {latest.Tag} já está instalada.";
         var latestManifest = await GetManifestAsync(latest);
         if (latestManifest.Tag != latest.Tag) throw new InvalidDataException("A versão do manifesto não corresponde à publicação.");
+        if (latestManifest.Sources.Count > 0)
+        {
+            if (state.Tag is null && MatchesExisting(root, latestManifest))
+            {
+                state.Tag = latest.Tag;
+                state.Files = latestManifest.Files;
+                saveState(state);
+                return $"A instalação existente já corresponde à versão {latest.Tag}.";
+            }
+            await ApplySourcesAsync(root, state, latestManifest);
+            state.Tag = latest.Tag;
+            state.Files = latestManifest.Files;
+            saveState(state);
+            return $"Atualizado para {state.Tag}.";
+        }
+        if (latest.Tag == state.Tag) return $"A versão {latest.Tag} já está instalada.";
         if (state.Tag is null && MatchesExisting(root, latestManifest))
         {
             state.Tag = latest.Tag;
@@ -114,8 +129,7 @@ public sealed class Updater
         using var response = await http.GetAsync(api + "?per_page=30");
         response.EnsureSuccessStatusCode();
         var releases = await response.Content.ReadFromJsonAsync<List<GitHubRelease>>(Data.JsonOptions) ?? [];
-        return releases.Where(r => !r.Draft && r.Assets.Any(a => a.Name == "manifest.json") &&
-                r.Assets.Any(a => a.Name == "full.zip") && r.Assets.Any(a => a.Name == "delta.zip"))
+        return releases.Where(r => !r.Draft && r.Assets.Any(a => a.Name == "manifest.json"))
             .OrderByDescending(r => r.PublishedAt)
             .FirstOrDefault() ?? throw new InvalidOperationException("Ainda não há uma versão de teste publicada.");
     }
@@ -224,6 +238,100 @@ public sealed class Updater
         finally
         {
             try { Directory.Delete(workspace, true); } catch { /* Temporary files can be cleared later. */ }
+        }
+    }
+
+    private async Task ApplySourcesAsync(string root, LocalState state, ReleaseManifest manifest)
+    {
+        var changed = manifest.Files.Where(pair =>
+        {
+            var path = Data.LocalPath(root, pair.Key);
+            EnsureNoLinks(root, path);
+            return !File.Exists(path) || Data.HashFile(path) != pair.Value;
+        }).Select(pair => pair.Key).ToList();
+        var removed = state.Files.Keys.Where(path => !manifest.Files.ContainsKey(path)).ToList();
+        var unavailable = changed.Where(path => !manifest.Sources.ContainsKey(path)).ToList();
+        if (unavailable.Count > 0)
+            throw new InvalidOperationException($"Esta instalação precisa de arquivos sem fonte identificada: {string.Join(", ", unavailable.Take(5))}" +
+                (unavailable.Count > 5 ? $" e mais {unavailable.Count - 5}." : "."));
+        if (changed.Count == 0 && removed.Count == 0) return;
+
+        var workspace = Path.Combine(Path.GetTempPath(), "LethalModpackUpdater", Guid.NewGuid().ToString("N"));
+        var stage = Path.Combine(workspace, "stage");
+        var backup = Path.Combine(backupRoot, manifest.Tag + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(stage);
+        try
+        {
+            foreach (var group in changed.GroupBy(path => manifest.Sources[path].Package))
+            {
+                var source = manifest.Archives[group.Key];
+                report($"Baixando {group.Key}...");
+                var zipPath = Path.Combine(workspace, Guid.NewGuid().ToString("N") + ".zip");
+                using (var response = await http.GetAsync(source.Url, HttpCompletionOption.ResponseHeadersRead))
+                {
+                    response.EnsureSuccessStatusCode();
+                    await using var input = await response.Content.ReadAsStreamAsync();
+                    await using var output = File.Create(zipPath);
+                    await input.CopyToAsync(output);
+                }
+                if (Data.HashFile(zipPath) != source.Sha256)
+                    throw new InvalidDataException($"Download corrompido: {group.Key}.");
+                using var zip = ZipFile.OpenRead(zipPath);
+                foreach (var relative in group)
+                {
+                    var entry = zip.GetEntry(manifest.Sources[relative].Entry)
+                        ?? throw new InvalidDataException($"Arquivo ausente no pacote {group.Key}: {relative}");
+                    var target = Data.LocalPath(stage, relative);
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    entry.ExtractToFile(target);
+                    if (Data.HashFile(target) != manifest.Files[relative])
+                        throw new InvalidDataException($"Arquivo inesperado em {group.Key}: {relative}");
+                }
+            }
+
+            Directory.CreateDirectory(backup);
+            var touched = changed.Concat(removed).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            foreach (var relative in touched)
+            {
+                var destination = Data.LocalPath(root, relative);
+                EnsureNoLinks(root, destination);
+                if (!File.Exists(destination)) continue;
+                var saved = Data.LocalPath(backup, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(saved)!);
+                File.Copy(destination, saved);
+            }
+            report($"Instalando {manifest.Tag}...");
+            try
+            {
+                foreach (var relative in removed) File.Delete(Data.LocalPath(root, relative));
+                foreach (var relative in changed)
+                {
+                    var destination = Data.LocalPath(root, relative);
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                    File.Copy(Data.LocalPath(stage, relative), destination, true);
+                    if (Data.HashFile(destination) != manifest.Files[relative])
+                        throw new IOException($"Falha ao verificar arquivo instalado: {relative}");
+                }
+            }
+            catch
+            {
+                foreach (var relative in touched)
+                {
+                    var destination = Data.LocalPath(root, relative);
+                    var saved = Data.LocalPath(backup, relative);
+                    if (File.Exists(saved))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                        File.Copy(saved, destination, true);
+                    }
+                    else File.Delete(destination);
+                }
+                throw;
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(workspace, true); } catch { }
         }
     }
 

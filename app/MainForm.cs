@@ -47,7 +47,7 @@ public sealed class MainForm : Form
         statusLabel.ForeColor = Color.Silver;
         Controls.AddRange([title, pathLabel, chooseButton, updateButton, statusLabel]);
         RefreshPath();
-        statusLabel.Text = state.Tag is null ? "Primeira instalação: será baixado o pacote completo." : $"Versão instalada: {state.Tag}";
+        statusLabel.Text = state.Tag is null ? "Pronto para verificar a instalação." : $"Versão instalada: {state.Tag}";
     }
 
     private void RefreshPath() => pathLabel.Text = string.IsNullOrEmpty(state.GamePath)
