@@ -17,6 +17,8 @@ var result = new ReleaseManifest
     Files = local.Files.Where(pair => Data.IsManaged(pair.Key))
         .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase)
 };
+const string casinoPath = "BepInEx/plugins/LethalCasino/mrgrm7.LethalCasino.dll";
+const string casinoOriginalHash = "729f877d8c79e32bde3b82c295e9c655f824660bf1a1a043c800fb248268c5ef";
 foreach (var reportPath in reportPaths)
 {
     using var document = JsonDocument.Parse(File.ReadAllText(reportPath));
@@ -39,6 +41,22 @@ foreach (var reportPath in reportPaths)
             Package = match.GetProperty("Package").GetString()!,
             Entry = match.GetProperty("Entry").GetString()!
         };
+    }
+    if (!result.Sources.ContainsKey(casinoPath) && report.TryGetProperty("SameName", out var sameName) &&
+        sameName.TryGetProperty(casinoPath, out var candidates))
+    {
+        foreach (var candidate in candidates.EnumerateArray())
+        {
+            if (!string.Equals(candidate.GetProperty("Sha256").GetString(), casinoOriginalHash, StringComparison.OrdinalIgnoreCase)) continue;
+            result.Sources[casinoPath] = new SourceFile
+            {
+                Package = candidate.GetProperty("Package").GetString()!,
+                Entry = candidate.GetProperty("Entry").GetString()!,
+                Patch = CasinoPatch.Id,
+                OriginalSha256 = casinoOriginalHash
+            };
+            break;
+        }
     }
 }
 if (configOption >= 0)

@@ -27,6 +27,8 @@ public sealed class SourceFile
 {
     public string Package { get; set; } = "";
     public string Entry { get; set; } = "";
+    public string? Patch { get; set; }
+    public string? OriginalSha256 { get; set; }
 }
 
 public sealed class LocalState
@@ -104,7 +106,11 @@ public static class Data
         }
         if (manifest.Sources.Any(pair => !manifest.Files.ContainsKey(pair.Key) ||
                 !IsManaged(pair.Key) || !manifest.Archives.ContainsKey(pair.Value.Package) ||
-                !IsSafeZipEntry(pair.Value.Entry)) ||
+                !IsSafeZipEntry(pair.Value.Entry) ||
+                (pair.Value.Patch is not null && (pair.Key != "BepInEx/plugins/LethalCasino/mrgrm7.LethalCasino.dll" ||
+                    pair.Value.Patch != CasinoPatch.Id ||
+                    !IsHash(pair.Value.OriginalSha256 ?? ""))) ||
+                (pair.Value.Patch is null && pair.Value.OriginalSha256 is not null)) ||
             manifest.Archives.Any(pair => !IsHash(pair.Value.Sha256) ||
                 !Uri.TryCreate(pair.Value.Url, UriKind.Absolute, out var url) ||
                 url.Scheme != Uri.UriSchemeHttps ||

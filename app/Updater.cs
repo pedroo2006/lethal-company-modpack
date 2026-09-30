@@ -249,7 +249,9 @@ public sealed class Updater
             EnsureNoLinks(root, path);
             return !File.Exists(path) || Data.HashFile(path) != pair.Value;
         }).Select(pair => pair.Key).ToList();
-        var removed = state.Files.Keys.Where(path => !manifest.Files.ContainsKey(path)).ToList();
+        var removed = state.Tag is null
+            ? EnumerateManagedFiles(root).Where(path => !manifest.Files.ContainsKey(path)).ToList()
+            : state.Files.Keys.Where(path => !manifest.Files.ContainsKey(path)).ToList();
         var unavailable = changed.Where(path => !manifest.Sources.ContainsKey(path)).ToList();
         if (unavailable.Count > 0)
             throw new InvalidOperationException($"Esta instalação precisa de arquivos sem fonte identificada: {string.Join(", ", unavailable.Take(5))}" +
@@ -279,11 +281,21 @@ public sealed class Updater
                 using var zip = ZipFile.OpenRead(zipPath);
                 foreach (var relative in group)
                 {
-                    var entry = zip.GetEntry(manifest.Sources[relative].Entry)
+                    var fileSource = manifest.Sources[relative];
+                    var entry = zip.GetEntry(fileSource.Entry)
                         ?? throw new InvalidDataException($"Arquivo ausente no pacote {group.Key}: {relative}");
                     var target = Data.LocalPath(stage, relative);
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                     entry.ExtractToFile(target);
+                    if (fileSource.Patch is not null)
+                    {
+                        if (Data.HashFile(target) != fileSource.OriginalSha256)
+                            throw new InvalidDataException($"Versão original inesperada em {group.Key}: {relative}");
+                        var patched = target + ".patched";
+                        if (fileSource.Patch == CasinoPatch.Id) CasinoPatch.Apply(target, patched);
+                        else throw new InvalidDataException($"Correção desconhecida: {fileSource.Patch}");
+                        File.Move(patched, target, true);
+                    }
                     if (Data.HashFile(target) != manifest.Files[relative])
                         throw new InvalidDataException($"Arquivo inesperado em {group.Key}: {relative}");
                 }

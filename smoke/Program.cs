@@ -4,6 +4,57 @@ using System.Text;
 using System.Text.Json;
 using LethalModpackUpdater;
 
+if (args.Length == 4 && args[0] == "--replay-old")
+{
+    var manifestPath = Path.GetFullPath(args[1]);
+    var draft = JsonSerializer.Deserialize<ReleaseManifest>(File.ReadAllText(manifestPath), Data.JsonOptions)
+        ?? throw new InvalidDataException("Manifesto preliminar inválido.");
+    var archives = draft.Archives.ToDictionary(pair => pair.Value.Url, pair => pair.Key == "modpack-settings"
+        ? Path.Combine(Path.GetDirectoryName(manifestPath)!, "settings.zip")
+        : Path.Combine(args[3], pair.Key + ".zip"));
+    using var replayClient = new HttpClient(new FakeHandler(request => request.RequestUri!.AbsolutePath switch
+    {
+        "/releases/latest" => Json(new { tag_name = draft.Tag, assets = Assets(draft.Tag) }),
+        var path when path == $"/assets/{draft.Tag}/manifest.json" => Json(draft),
+        _ when archives.TryGetValue(request.RequestUri.AbsoluteUri, out var archivePath) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(File.OpenRead(archivePath))
+        },
+        var path => throw new InvalidOperationException("Download inesperado: " + path)
+    }));
+    var gamePath = Path.GetFullPath(args[2]);
+    var replayState = new LocalState { GamePath = gamePath };
+    var replayUpdater = new Updater(Console.WriteLine, replayClient, "https://test.local/releases", _ => { },
+        Path.Combine(Path.GetDirectoryName(gamePath)!, "replay-backups"));
+    await replayUpdater.UpdateAsync(replayState);
+    Check(replayState.Tag == draft.Tag, "RAR antigo não foi atualizado.");
+    foreach (var (relative, expectedHash) in draft.Files)
+        Check(Data.HashFile(Data.LocalPath(gamePath, relative)) == expectedHash, "Arquivo final diferente: " + relative);
+    var actual = Data.ManagedFolders.SelectMany(folder =>
+    {
+        var path = Path.Combine(gamePath, "BepInEx", folder);
+        return Directory.Exists(path) ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories) : [];
+    }).Select(path => Path.GetRelativePath(gamePath, path).Replace('\\', '/'))
+        .Where(Data.IsManaged).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    Check(actual.SetEquals(draft.Files.Keys), "RAR atualizado ainda contém arquivos antigos gerenciados.");
+    Console.WriteLine("RAR antigo atualizado integralmente e verificado.");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--casino-patch")
+{
+    var output = Path.Combine(Path.GetTempPath(), "LethalModpackCasino-" + Guid.NewGuid().ToString("N") + ".dll");
+    try
+    {
+        CasinoPatch.Apply(args[1], output);
+        Check(Data.HashFile(output).Equals(args[2], StringComparison.OrdinalIgnoreCase),
+            "Correção do Casino não reproduziu a DLL validada.");
+        Console.WriteLine("Correção do Casino reproduzida com o hash esperado.");
+    }
+    finally { if (File.Exists(output)) File.Delete(output); }
+    return;
+}
+
 if (args.Length == 2)
 {
     var draft = JsonSerializer.Deserialize<ReleaseManifest>(File.ReadAllText(args[0]), Data.JsonOptions)
@@ -170,6 +221,14 @@ Check(sourceState.Tag == "v3" && File.ReadAllText(Path.Combine(sourceGame, "BepI
     !File.Exists(Path.Combine(sourceGame, "BepInEx", "plugins", "Removed.dll")), "Fonte original não atualizou e removeu corretamente.");
 await sourceUpdater.UpdateAsync(sourceState);
 Check(sourceDownloadCount == 2, "Repetiu download após atualização.");
+var freshSourceGame = Path.Combine(testRoot, "fresh-source-game");
+Directory.CreateDirectory(Path.Combine(freshSourceGame, "BepInEx", "plugins"));
+File.WriteAllText(Path.Combine(freshSourceGame, "Lethal Company.exe"), "");
+File.WriteAllText(Path.Combine(freshSourceGame, "BepInEx", "plugins", "Extra.dll"), "old extra");
+var freshSourceState = new LocalState { GamePath = freshSourceGame };
+await sourceUpdater.UpdateAsync(freshSourceState);
+Check(freshSourceState.Tag == "v3" && !File.Exists(Path.Combine(freshSourceGame, "BepInEx", "plugins", "Extra.dll")),
+    "Primeira instalação por fonte original não removeu arquivo antigo.");
 Console.WriteLine("Fonte original: verificação, alteração, remoção e economia de download passaram.");
 
 static object[] Assets(string tag) => new[] { "manifest.json", "full.zip", "delta.zip" }
