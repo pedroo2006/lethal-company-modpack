@@ -10,6 +10,6 @@ Esta lista registra diferenças confirmadas entre DLLs ativas e pacotes originai
 | SoundAPI | Desativa o corpo de `RoundManagerPatch.Reporting()`; a geração de relatórios já estava desativada na configuração. | `Diagnostico_SoundAPI/preparar_correcao.ps1`; DLL ativa tem o mesmo hash da candidata. | Geração de mapa sem a exceção anterior. |
 | TooManyEmotes | Ajusta a busca pelo método privado `ChangeAudioListenerToObject`. | Backups em `Diagnostico_TooManyEmotes`; DLL ativa tem o mesmo hash da cópia corrigida. | Emotes funcionaram em teste solo e multiplayer. |
 
-Outras DLLs com o mesmo nome e versão do pacote original também têm hashes diferentes, por exemplo Coroner e FairAI. Ainda não há evidência de que tenham sido alteradas manualmente. Até esclarecer a origem, o atualizador não deve substituí-las automaticamente.
+Algumas diferenças de hash vinham de versões de pacote diferentes: `Coroner.dll` corresponde ao pacote original 2.4.2, e `FairAI.dll` ao 1.6.1. Outras DLLs ainda não têm fonte exata identificada. Até esclarecer a origem, o atualizador não deve substituí-las automaticamente.
 
 Os caminhos `Diagnostico_*` estão fora deste repositório e só existem no PC do publicador. Servem para reproduzir e verificar as correções, não para distribuição aos jogadores.

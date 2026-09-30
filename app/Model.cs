@@ -68,6 +68,8 @@ public static class Data
     public static bool IsManaged(string relative)
     {
         if (string.IsNullOrWhiteSpace(relative) || Path.IsPathRooted(relative) || relative.Contains('\\')) return false;
+        if (relative.StartsWith("BepInEx/plugins/MMHOOK/", StringComparison.OrdinalIgnoreCase) ||
+            relative.Equals("BepInEx/plugins/CullFactory/version", StringComparison.OrdinalIgnoreCase)) return false;
         var parts = relative.Split('/');
         return parts.Length >= 3 && parts[0] == "BepInEx" &&
             ManagedFolders.Contains(parts[1], StringComparer.OrdinalIgnoreCase) &&

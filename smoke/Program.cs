@@ -4,6 +4,25 @@ using System.Text;
 using System.Text.Json;
 using LethalModpackUpdater;
 
+if (args.Length == 2)
+{
+    var draft = JsonSerializer.Deserialize<ReleaseManifest>(File.ReadAllText(args[0]), Data.JsonOptions)
+        ?? throw new InvalidDataException("Manifesto preliminar inválido.");
+    using var draftClient = new HttpClient(new FakeHandler(request => request.RequestUri!.AbsolutePath switch
+    {
+        "/releases/latest" => Json(new { tag_name = draft.Tag, assets = Assets(draft.Tag) }),
+        var path when path == $"/assets/{draft.Tag}/manifest.json" => Json(draft),
+        var path => throw new InvalidOperationException("Download inesperado: " + path)
+    }));
+    var draftState = new LocalState { GamePath = args[1] };
+    var draftUpdater = new Updater(Console.WriteLine, draftClient, "https://test.local/releases", _ => { },
+        Path.Combine(Path.GetTempPath(), "LethalModpackDraftBackups"));
+    var result = await draftUpdater.UpdateAsync(draftState);
+    Check(draftState.Tag == draft.Tag, "Instalação local não corresponde ao manifesto preliminar.");
+    Console.WriteLine(result);
+    return;
+}
+
 var testRoot = Path.Combine(Path.GetTempPath(), "LethalModpackSmoke", Guid.NewGuid().ToString("N"));
 var fixtures = Path.Combine(testRoot, "fixtures");
 var source = Path.Combine(testRoot, "source");

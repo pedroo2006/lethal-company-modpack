@@ -1,6 +1,6 @@
 # Lethal Company Modpack Updater
 
-> **Em preparação:** ainda não existe versão publicada para os amigos. O manifesto local cobre 1.418 dos 1.461 arquivos atuais: 1.347 vêm de pacotes originais verificados e 71 são configurações do grupo. Os 43 restantes precisam de origem ou de um tratamento próprio antes da primeira publicação.
+> **Em preparação:** ainda não existe versão publicada para os amigos. O manifesto local cobre 1.428 dos 1.453 arquivos gerenciados: 1.356 vêm de pacotes originais verificados e 72 são configurações do grupo. Os 25 restantes precisam de origem ou de um tratamento próprio antes da primeira publicação. Oito arquivos gerados pelo jogo não entram no manifesto.
 
 Atualizador de um clique para o modpack de `pedroo2006`. Ele consulta apenas a última versão **publicada** em GitHub Releases. Versões em rascunho e testes locais não chegam aos amigos.
 

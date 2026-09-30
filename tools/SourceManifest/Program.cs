@@ -10,7 +10,13 @@ if (configOption >= 0 && configOption != args.Length - 2)
 var reportPaths = args.Skip(3).Take((configOption < 0 ? args.Length : configOption) - 3);
 var local = JsonSerializer.Deserialize<ReleaseManifest>(File.ReadAllText(args[0]), Data.JsonOptions)
     ?? throw new InvalidDataException("Manifesto local inválido.");
-var result = new ReleaseManifest { Tag = local.Tag, PreviousTag = local.PreviousTag, Files = local.Files };
+var result = new ReleaseManifest
+{
+    Tag = local.Tag,
+    PreviousTag = local.PreviousTag,
+    Files = local.Files.Where(pair => Data.IsManaged(pair.Key))
+        .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase)
+};
 foreach (var reportPath in reportPaths)
 {
     using var document = JsonDocument.Parse(File.ReadAllText(reportPath));
@@ -26,7 +32,7 @@ foreach (var reportPath in reportPaths)
     }
     foreach (var file in report.GetProperty("Matches").EnumerateObject())
     {
-        if (result.Sources.ContainsKey(file.Name)) continue;
+        if (!result.Files.ContainsKey(file.Name) || result.Sources.ContainsKey(file.Name)) continue;
         var match = file.Value[0];
         result.Sources[file.Name] = new SourceFile
         {
@@ -38,7 +44,22 @@ foreach (var reportPath in reportPaths)
 if (configOption >= 0)
 {
     var gameRoot = Path.GetFullPath(args[configOption + 1]);
-    var configFiles = result.Files.Keys.Where(path => path.StartsWith("BepInEx/config/", StringComparison.OrdinalIgnoreCase) &&
+    foreach (var (relative, expectedHash) in result.Files)
+    {
+        var localPath = Data.LocalPath(gameRoot, relative);
+        if (!File.Exists(localPath) || Data.HashFile(localPath) != expectedHash)
+            throw new InvalidDataException($"Instalação local mudou após o inventário: {relative}");
+    }
+    var current = Data.ManagedFolders.SelectMany(folder =>
+    {
+        var path = Path.Combine(gameRoot, "BepInEx", folder);
+        return Directory.Exists(path) ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories) : [];
+    }).Select(path => Path.GetRelativePath(gameRoot, path).Replace('\\', '/')).Where(Data.IsManaged).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    if (!current.SetEquals(result.Files.Keys))
+        throw new InvalidDataException("A lista de arquivos locais mudou após o inventário.");
+    var configFiles = result.Files.Keys.Where(path =>
+        (path.StartsWith("BepInEx/config/", StringComparison.OrdinalIgnoreCase) ||
+         path.Equals("BepInEx/patchers/MonkeyInjectionLibrary.Development.cfg", StringComparison.OrdinalIgnoreCase)) &&
         path.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase) && !result.Sources.ContainsKey(path)).Order().ToArray();
     var settingsZip = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[1]))!, "settings.zip");
     var settingsTemp = settingsZip + "." + Guid.NewGuid().ToString("N") + ".tmp";
