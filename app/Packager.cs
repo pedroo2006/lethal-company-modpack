@@ -46,7 +46,7 @@ public static class Packager
         if (files.Count == 0) throw new InvalidDataException("Nenhum arquivo de mod encontrado.");
 
         Directory.CreateDirectory(output);
-        var changed = files.Where(kv => previous is null || !previous.Files.TryGetValue(kv.Key, out var oldHash) || oldHash != kv.Value)
+        var changed = previous is null ? [] : files.Where(kv => !previous.Files.TryGetValue(kv.Key, out var oldHash) || oldHash != kv.Value)
             .Select(kv => kv.Key).Order(StringComparer.OrdinalIgnoreCase).ToList();
         var removed = previous?.Files.Keys.Where(p => !files.ContainsKey(p)).Order(StringComparer.OrdinalIgnoreCase).ToList() ?? [];
         WriteZip(Path.Combine(output, "full.zip"), root, files.Keys);
