@@ -12,6 +12,14 @@ Atualizador de um clique para o modpack de `pedroo2006`. Ele consulta apenas a �
 - O jogo deve estar fechado durante a atualização. Arquivos são verificados por SHA-256 antes de instalar.
 - Arquivos substituídos ou removidos são copiados para `%LocalAppData%\LethalModpackUpdater\backups`.
 
+## Testar antes de liberar para todos
+
+O aplicativo normal consulta apenas versões completas publicadas. O [GitHub não inclui pré-lançamentos na rota da última versão](https://docs.github.com/en/rest/releases/releases#get-the-latest-release).
+
+Para o jogador que ajuda nos testes, coloque um arquivo vazio chamado `canal-teste.txt` **ao lado do executável**. Essa cópia passa a aceitar também pré-lançamentos publicados. Você controla quando uma versão aparece ao publicá-la como pré-lançamento no GitHub Releases. Os demais jogadores continuam na última versão completa.
+
+Se uma versão de teste for abandonada e a próxima versão aprovada seguir outro histórico, o atualizador do testador instala o pacote completo para voltar ao mesmo estado.
+
 ## Criar um pacote
 
 O computador do publicador precisa do SDK .NET 10. Na raiz do repositório:

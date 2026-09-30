@@ -12,7 +12,8 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "Lethal Company · Modpack";
+        var testChannel = File.Exists(Path.Combine(AppContext.BaseDirectory, "canal-teste.txt"));
+        Text = testChannel ? "Lethal Company · Modpack (teste)" : "Lethal Company · Modpack";
         ClientSize = new Size(520, 205);
         MinimumSize = new Size(470, 230);
         MaximumSize = new Size(900, 230);
@@ -21,7 +22,7 @@ public sealed class MainForm : Form
         BackColor = Color.FromArgb(25, 27, 32);
         ForeColor = Color.White;
 
-        var title = new Label { Text = "Modpack dos amigos", Font = new Font("Segoe UI", 17, FontStyle.Bold),
+        var title = new Label { Text = testChannel ? "Modpack dos amigos · teste" : "Modpack dos amigos", Font = new Font("Segoe UI", 17, FontStyle.Bold),
             Location = new Point(20, 17), Size = new Size(470, 37) };
         pathLabel.Location = new Point(20, 61);
         pathLabel.Size = new Size(385, 42);
@@ -84,7 +85,8 @@ public sealed class MainForm : Form
         chooseButton.Enabled = false;
         try
         {
-            var updater = new Updater(message => BeginInvoke(() => statusLabel.Text = message));
+            var updater = new Updater(message => BeginInvoke(() => statusLabel.Text = message),
+                File.Exists(Path.Combine(AppContext.BaseDirectory, "canal-teste.txt")));
             var result = await Task.Run(() => updater.UpdateAsync(state));
             statusLabel.Text = result;
             StartGame();

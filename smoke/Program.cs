@@ -30,6 +30,13 @@ using var client = new HttpClient(new FakeHandler(request =>
         tag_name = latest,
         assets = Assets(latest)
     });
+    if (path == "/releases") return Json(new[]
+    {
+        new { tag_name = "v2", draft = false, prerelease = true,
+            published_at = new DateTimeOffset(2026, 9, 30, 10, 0, 0, TimeSpan.Zero), assets = Assets("v2") },
+        new { tag_name = "v1", draft = false, prerelease = false,
+            published_at = new DateTimeOffset(2026, 9, 29, 10, 0, 0, TimeSpan.Zero), assets = Assets("v1") }
+    });
     if (path.StartsWith("/releases/tags/"))
     {
         var tag = path.Split('/').Last();
@@ -54,24 +61,27 @@ Check(state.Tag == "v1", "Versão inicial não instalada.");
 Check(!File.Exists(Path.Combine(game, "BepInEx", "plugins", "Old.dll")), "Arquivo extra não removido.");
 Check(File.Exists(Path.Combine(game, "BepInEx", "plugins", "B.dll")), "B.dll ausente na versão inicial.");
 
-latest = "v2";
+await updater.UpdateAsync(state);
+Check(state.Tag == "v1", "Canal normal instalou um pré-lançamento.");
+var testUpdater = new Updater(Console.WriteLine, client, "https://test.local/releases", _ => { },
+    Path.Combine(testRoot, "backups"), includeTests: true);
 corruptDelta = true;
 try
 {
-    await updater.UpdateAsync(state);
+    await testUpdater.UpdateAsync(state);
     throw new Exception("Pacote corrompido foi aceito.");
 }
 catch (InvalidDataException) { }
 Check(state.Tag == "v1" && File.Exists(Path.Combine(game, "BepInEx", "plugins", "B.dll")),
     "Download corrompido alterou a instalação.");
 corruptDelta = false;
-await updater.UpdateAsync(state);
+await testUpdater.UpdateAsync(state);
 Check(state.Tag == "v2", "Atualização não instalada.");
 Check(!File.Exists(Path.Combine(game, "BepInEx", "plugins", "B.dll")), "B.dll não removido.");
 Check(File.ReadAllText(Path.Combine(game, "BepInEx", "plugins", "A.dll")).Trim() == "a2", "A.dll não atualizado.");
 Check(File.Exists(Path.Combine(game, "BepInEx", "config", "C.cfg")), "C.cfg não instalado.");
 Check(Directory.EnumerateFiles(Path.Combine(testRoot, "backups"), "Old.dll", SearchOption.AllDirectories).Any(), "Backup inicial ausente.");
-Console.WriteLine("Smoke test passou: instalação, atualização, remoção, backup e download corrompido.");
+Console.WriteLine("Smoke test passou: instalação, canal de teste, atualização, remoção, backup e download corrompido.");
 
 static object[] Assets(string tag) => new[] { "manifest.json", "full.zip", "delta.zip" }
     .Select(name => (object)new { name, browser_download_url = $"https://test.local/assets/{tag}/{name}" }).ToArray();

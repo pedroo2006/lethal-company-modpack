@@ -10,6 +10,8 @@ namespace LethalModpackUpdater;
 public sealed class GitHubRelease
 {
     [JsonPropertyName("tag_name")] public string Tag { get; set; } = "";
+    [JsonPropertyName("draft")] public bool Draft { get; set; }
+    [JsonPropertyName("published_at")] public DateTimeOffset? PublishedAt { get; set; }
     [JsonPropertyName("assets")] public List<GitHubAsset> Assets { get; set; } = [];
     public GitHubAsset Asset(string name) => Assets.SingleOrDefault(a => a.Name == name)
         ?? throw new InvalidDataException($"A versão {Tag} não tem {name}.");
@@ -29,19 +31,27 @@ public sealed class Updater
     private readonly string api;
     private readonly Action<LocalState> saveState;
     private readonly string backupRoot;
+    private readonly bool includeTests;
 
-    public Updater(Action<string> report) : this(report, new HttpClient(), PublicApi, Data.SaveState, Data.BackupRoot) { }
+    public Updater(Action<string> report, bool includeTests = false)
+        : this(report, CreateClient(), PublicApi, Data.SaveState, Data.BackupRoot, includeTests) { }
 
-    public Updater(Action<string> report, HttpClient http, string api, Action<LocalState> saveState, string backupRoot)
+    public Updater(Action<string> report, HttpClient http, string api, Action<LocalState> saveState, string backupRoot, bool includeTests = false)
     {
         this.report = report;
         this.http = http;
         this.api = api.TrimEnd('/');
         this.saveState = saveState;
         this.backupRoot = backupRoot;
-        http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("LethalModpackUpdater", "1.0"));
-        http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-        http.Timeout = Timeout.InfiniteTimeSpan;
+        this.includeTests = includeTests;
+    }
+
+    private static HttpClient CreateClient()
+    {
+        var client = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("LethalModpackUpdater", "1.0"));
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+        return client;
     }
 
     public async Task<string> UpdateAsync(LocalState state)
@@ -52,12 +62,13 @@ public sealed class Updater
             throw new IOException("Feche o jogo antes de atualizar.");
 
         report("Procurando a última versão aprovada...");
-        var latest = await GetReleaseAsync("latest");
+        var latest = await GetLatestAsync();
         if (latest.Tag == state.Tag) return $"A versão {latest.Tag} já está instalada.";
 
         var steps = new List<(GitHubRelease Release, ReleaseManifest Manifest)>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var current = latest;
+        var forceFull = state.Tag is null;
         while (true)
         {
             if (!visited.Add(current.Tag) || steps.Count > 100) throw new InvalidDataException("Histórico de versões inválido.");
@@ -66,22 +77,38 @@ public sealed class Updater
             steps.Add((current, manifest));
             if (state.Tag is null || manifest.PreviousTag == state.Tag) break;
             if (manifest.PreviousTag is null)
-                throw new InvalidDataException("A versão instalada não está no histórico publicado. Reinstale a versão completa.");
+            {
+                forceFull = true;
+                break;
+            }
             current = await GetReleaseAsync("tags/" + Uri.EscapeDataString(manifest.PreviousTag));
         }
-        if (state.Tag is null) steps = [steps[0]];
+        if (forceFull) steps = [steps[0]];
         else steps.Reverse();
 
         foreach (var (release, manifest) in steps)
         {
-            var isFull = state.Tag is null;
+            var isFull = forceFull;
             report($"Baixando {manifest.Tag}...");
             await ApplyAsync(root, state, release, manifest, isFull);
             state.Tag = manifest.Tag;
             state.Files = manifest.Files;
             saveState(state);
+            forceFull = false;
         }
         return $"Atualizado para {state.Tag}.";
+    }
+
+    private async Task<GitHubRelease> GetLatestAsync()
+    {
+        if (!includeTests) return await GetReleaseAsync("latest");
+        using var response = await http.GetAsync(api + "?per_page=30");
+        response.EnsureSuccessStatusCode();
+        var releases = await response.Content.ReadFromJsonAsync<List<GitHubRelease>>(Data.JsonOptions) ?? [];
+        return releases.Where(r => !r.Draft && r.Assets.Any(a => a.Name == "manifest.json") &&
+                r.Assets.Any(a => a.Name == "full.zip") && r.Assets.Any(a => a.Name == "delta.zip"))
+            .OrderByDescending(r => r.PublishedAt)
+            .FirstOrDefault() ?? throw new InvalidOperationException("Ainda não há uma versão de teste publicada.");
     }
 
     private async Task<GitHubRelease> GetReleaseAsync(string suffix)
